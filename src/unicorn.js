@@ -3,6 +3,7 @@ import errors from './error-messages';
 import utils from './utils';
 import validTags from './valid-tags';
 import _ from 'lodash';
+import { Observable } from 'rxjs';
 
  /************************************************************************************************************************************
      * REF for DEV
@@ -19,9 +20,10 @@ import _ from 'lodash';
 
 const unicorn = (function(){
   var root;
+  var appRoot;
 
   // Grab var from {{ var }}
-  var templateRegEx = /{{([^}{]+)?}}/g;
+  var templateRegEx = /{{(([^}{]+)?)}}/g;
 
   // Global Store of Components
   var registeredComponents = {};
@@ -33,17 +35,28 @@ const unicorn = (function(){
     Registers a component to be used by the app
   */
   function registerComponent(component){
-    
     // Checks if Component is Single Object or Array of Objects
+    
     if(Array.isArray(component)){
       component.forEach(registerComponent);
       return;
     }
 
     const parsedTemplate = processTemplate(component);
+  
+    component.update = updateComponent;
     registeredComponents[component.name] = component;
 
     return parsedTemplate;
+  }
+
+  function updateComponent(newData){
+    let component = registeredComponents[this.name]
+    let oldData = component.data;
+    let updatedData = Object.assign(oldData, newData);
+    component.data = updatedData;
+    const newTree = registerComponent(appRoot);
+    root.replaceChild(newTree, root.firstChild);
   }
 
   /*
@@ -55,7 +68,6 @@ const unicorn = (function(){
   */
   function processTemplate(component) {
     let parsedTemplate;
-    
 
     if('el' in component){
       parsedTemplate = processElTemplate(component);
@@ -76,22 +88,33 @@ const unicorn = (function(){
     Grabs a node in the html, processes it as a template and replaces it
   */
   function processElTemplate(component) {
-    const target = document.querySelector(component.el);
+    const target = document.querySelectorAll(component.el);
+    
     if(isValidTarget(target, 'process element template: ', component.el)){
       let validTarget = target[0];
+      
       let parsedElTemplate = parseDomToString(validTarget);
 
       if('components' in component) {
-        parsedElTemplate = parseComponents(parsedElTemplate, component.components);
+        component.template = parsedElTemplate;
+        
+        removeSelf(validTarget);
+
+        return parseComponents(component, component.components);
       }
       
       parsedTemplate = parseTemplateUnicorn(parsedElTemplate, component);
 
-      validTarget.parentElement.removeChild(validTarget);
+      removeSelf(validTarget);
+
       return parsedTemplate;
     }
     
     return null;
+  }
+
+  function removeSelf(element){
+    element.parentElement.removeChild(element);
   }
 
   /*
@@ -122,7 +145,7 @@ const unicorn = (function(){
   */
   function processPlainTemplate(component){
     if('components' in component){
-      component.template = parseComponents(component.template, component.components);
+      return parseComponents(component, component.components);
     }
 
     return parseTemplateUnicorn(component.template, component);
@@ -142,6 +165,7 @@ const unicorn = (function(){
     }
 
     root = target[0];
+    appRoot = rootComponent;
 
     root.appendChild(registerComponent(rootComponent));
   }
@@ -184,6 +208,7 @@ const unicorn = (function(){
     Passes HTML through XMLSerializer and returns string html
   */
   function parseDomToString(template) {
+    console.log('temp', template);
     const serializer = new XMLSerializer();
     
     return serializer.serializeToString(template);
@@ -193,13 +218,13 @@ const unicorn = (function(){
     @params: Template<string>, array<string> 
     @return: Template<string>
 
-    Passes HTML through XMLSerializer and returns string html
+    Passes components into template string
   */
-  function parseComponents(template, components) {
-    let templateFinal = template;
+  function parseComponents(parent, components) {
+    let templateFinal = parent.template;
     let templates = [];
 
-    let htmlTemplate = parseTemplateToHTML(template);
+    let htmlTemplate = parseTemplateUnicorn(parent.template, parent);
     
     components.forEach(function(component){
       if(document.createElement(component).constructor !== HTMLElement){
@@ -207,13 +232,18 @@ const unicorn = (function(){
       }
       
       let componentRoot = htmlTemplate.querySelector(component);
+      
       if(componentRoot){
         handleProps(componentRoot, component);
-        componentRoot.parentElement.replaceChild(registerComponent(registeredComponents[component]), componentRoot);
+
+        const componentBase = registeredComponents[component];
+        const replacementHtml = parseTemplateUnicorn(componentBase.template, componentBase);
+
+        componentRoot.parentElement.replaceChild(replacementHtml, componentRoot);
       }
     });
 
-    return parseDomToString(htmlTemplate);
+    return htmlTemplate;
   }
 
   /*
@@ -224,12 +254,14 @@ const unicorn = (function(){
   */
   function templateEngine(template, data){
     let match;
+    let newTemplate = template;
 
     while(match = templateRegEx.exec(template)) {
-        template = template.replace(match[0], ObjectByString(data, match[1]));
+
+      newTemplate = newTemplate.replace(match[0], ObjectByString(data, match[1]));
     }
 
-    return template;
+    return newTemplate;
   }
 
   /*
@@ -239,9 +271,11 @@ const unicorn = (function(){
     Gets value of deeply nested props in Object ex. 'data.props.something' -> data[props][something]
   */
   function ObjectByString (obj, str) {
+
     str = str.replace(/\[(\w+)\]/g, '.$1'); // convert indexes to properties
     str = str.replace(/^\./, '');           // strip a leading dot
     var arrayStr = str.split('.');
+
     for (var i = 0; i < arrayStr.length; ++i) {
         var key = arrayStr[i];
         if (key in obj) {
@@ -263,13 +297,17 @@ const unicorn = (function(){
   */
   function registerEvents(html, component){
     const clicks = html.querySelectorAll('[u-click]');
+    
     if(clicks.length <= 0){
       return;
     }
 
     clicks.forEach((click)=>{
       const methodName = click.getAttribute('u-click');
-      click.addEventListener('click', component.methods[methodName]);
+      //click.addEventListener('click', component.methods[methodName]);
+      if(component.methods[methodName]){
+        click.onclick = component.methods[methodName].bind(component);
+      }
     });
   }
 
