@@ -12,7 +12,6 @@ export default {
   },
   methods: {
     changeData: function(event) {
-      console.log(event);
       this.update({merp: 'Hiya'});
      
     }

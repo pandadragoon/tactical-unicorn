@@ -4,7 +4,9 @@ export default  {
     <h3>{{description}}</h3>
   </div>`,
   data: {
-    description: '____||______'
+    description: `
+      :)__________||___________
+    `
   },
   name: 'happy-tree'
 }

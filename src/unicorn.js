@@ -42,21 +42,33 @@ const unicorn = (function(){
       return;
     }
 
-    const parsedTemplate = processTemplate(component);
-  
     component.update = updateComponent;
     registeredComponents[component.name] = component;
+    const parsedTemplate = processTemplate(component);
 
     return parsedTemplate;
   }
 
+  /*
+    @params: object(any) 
+    @return: void
+
+    Updates date on component and then rerenders
+  */
   function updateComponent(newData){
     let component = registeredComponents[this.name]
     let oldData = component.data;
     let updatedData = Object.assign(oldData, newData);
     component.data = updatedData;
-    const newTree = registerComponent(appRoot);
-    root.replaceChild(newTree, root.firstChild);
+   
+    const newTree = registerComponent(registeredComponents[appRoot]);
+    
+    if(root.firstChild){
+      root.replaceChild(newTree, root.firstChild);
+    }else {
+      root.appendChild(newTree);
+    }
+    
   }
 
   /*
@@ -94,20 +106,12 @@ const unicorn = (function(){
       let validTarget = target[0];
       
       let parsedElTemplate = parseDomToString(validTarget);
-
-      if('components' in component) {
-        component.template = parsedElTemplate;
-        
-        removeSelf(validTarget);
-
-        return parseComponents(component, component.components);
-      }
-      
-      parsedTemplate = parseTemplateUnicorn(parsedElTemplate, component);
-
+      component.template = parsedElTemplate;
+      component = _.omit(component, 'el');
       removeSelf(validTarget);
 
-      return parsedTemplate;
+      return registerComponent(component);
+      
     }
     
     return null;
@@ -165,7 +169,7 @@ const unicorn = (function(){
     }
 
     root = target[0];
-    appRoot = rootComponent;
+    appRoot = rootComponent.name;
 
     root.appendChild(registerComponent(rootComponent));
   }
@@ -208,7 +212,6 @@ const unicorn = (function(){
     Passes HTML through XMLSerializer and returns string html
   */
   function parseDomToString(template) {
-    console.log('temp', template);
     const serializer = new XMLSerializer();
     
     return serializer.serializeToString(template);
